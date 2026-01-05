@@ -1,6 +1,6 @@
 # People Protocol Skill Builder
 
-A Python CLI tool that fetches skills from the Lightcast API and transforms them into the People Protocol framework format using Claude (Anthropic).
+A web application that fetches skills from the Lightcast API and transforms them into the People Protocol framework format using Claude (Anthropic). Available as both a Python CLI tool and a modern Next.js web interface.
 
 ## Overview
 
@@ -12,41 +12,79 @@ This tool helps you:
 
 ## Prerequisites
 
-- Python 3.7 or higher
+- Node.js 18+ (for web interface)
+- Python 3.7+ (for CLI tool)
 - Lightcast API credentials (Client ID and Client Secret)
-- Anthropic API key (for Claude)
+- Local Ollama installation (for skill transformations)
 
 ## Setup
 
 1. **Clone or download this repository**
 
-2. **Install dependencies:**
+2. **Set up environment variables:**
+   
+   Copy the example environment file:
+   ```bash
+   cp env.example .env.local
+   ```
+   
+   Then edit `.env.local` (or `.env`) with your credentials:
+   ```
+   LIGHTCAST_CLIENT_ID=your_client_id
+   LIGHTCAST_CLIENT_SECRET=your_client_secret
+   OLLAMA_BASE_URL=http://localhost:11434
+   OLLAMA_MODEL=llama3.2
+   ```
+
+### Web Interface (Recommended)
+
+3. **Install Node.js dependencies:**
+   ```bash
+   npm install
+   ```
+
+4. **Run the development server:**
+   ```bash
+   npm run dev
+   ```
+
+5. **Open your browser:**
+   Navigate to [http://localhost:3000](http://localhost:3000)
+
+### CLI Tool (Alternative)
+
+3. **Install Python dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Set up environment variables:**
-   
-   Copy the example environment file:
-   ```bash
-   cp .env.example .env
-   ```
-   
-   Then edit `.env` with your credentials, or export them in your shell:
+4. **Set environment variables in your shell:**
    ```bash
    export LIGHTCAST_CLIENT_ID="your_client_id"
    export LIGHTCAST_CLIENT_SECRET="your_client_secret"
-   export ANTHROPIC_API_KEY="your_anthropic_key"
+   export GOOGLE_API_KEY="your_google_api_key"
+   ```
+
+5. **Run the script:**
+   ```bash
+   python people_protocol_skill_builder.py
    ```
 
 ## Usage
 
-Run the script:
-```bash
-python people_protocol_skill_builder.py
-```
+### Web Interface
 
-### Menu Options
+The web interface provides a modern, user-friendly experience with:
+- **Search Skills**: Search for skills by keyword
+- **Browse**: Explore skills using an interactive tree view of skill types with counts. Filter types by name and click on any type to view its skills. Types are automatically categorized (Common Skills, Specialized Skills, Software & Tools, etc.) for easy navigation.
+- **Selected Skills**: View and manage your selected skills
+- **Transform & Export**: Transform skills using Claude and download as JSON
+
+Simply navigate through the tabs to search, select, transform, and export your skills.
+
+### CLI Tool
+
+The CLI tool provides the following menu options:
 
 1. **Search skills by keyword** - Search for skills using keywords
 2. **Browse skills by type** - Browse skills filtered by type
@@ -57,7 +95,7 @@ python people_protocol_skill_builder.py
 ### Workflow
 
 1. Search or browse for skills you want to transform
-2. Select skills from the results (enter numbers like `1,3,5` or `all`)
+2. Select skills from the results (in CLI: enter numbers like `1,3,5` or `all`)
 3. View and manage your selected skills
 4. Transform and export all selected skills to `people_protocol_skills.json`
 
@@ -103,9 +141,12 @@ Each skill includes behavioral statements across five levels:
 - Access to the Skills API endpoint
 - Scope: `emsi_open`
 
-### Anthropic Claude API
-- API key for Claude Sonnet 4 model access
-- Account with sufficient credits for API calls
+### Local Ollama
+- [Ollama](https://ollama.com/) installed and running locally
+- Model pulled (e.g., `ollama pull llama3.2`)
+- Ollama server running on `http://localhost:11434` (default)
+- Configure `OLLAMA_MODEL` in your `.env` file to match your installed model
+- Configure `OLLAMA_BASE_URL` if your Ollama server runs on a different address
 
 ## Troubleshooting
 
@@ -115,9 +156,11 @@ Each skill includes behavioral statements across five levels:
 - Ensure you have the necessary API access permissions
 
 **Transformation errors:**
-- Check your Anthropic API key and account status
-- Verify you have sufficient API credits
-- Check your internet connection
+- Ensure Ollama is running (`ollama serve`)
+- Verify the model is installed (`ollama list`)
+- Check that `OLLAMA_BASE_URL` points to your Ollama server (default: `http://localhost:11434`)
+- Ensure `OLLAMA_MODEL` matches an installed model name
+- Check your internet connection (if Ollama is on a remote server)
 
 ## License
 
