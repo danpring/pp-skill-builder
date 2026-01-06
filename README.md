@@ -77,6 +77,7 @@ This tool helps you:
 The web interface provides a modern, user-friendly experience with:
 - **Search Skills**: Search for skills by keyword
 - **Browse**: Explore skills using an interactive tree view of skill types with counts. Filter types by name and click on any type to view its skills. Types are automatically categorized (Common Skills, Specialized Skills, Software & Tools, etc.) for easy navigation.
+- **AI Recommendations**: Get AI-powered skill recommendations based on role titles. Simply enter a role title (e.g., "Senior Full Stack Developer", "Product Manager"), and the AI will analyze the role and recommend the top 6 most relevant skills from the Lightcast database. The AI may ask follow-up questions for additional context (industry, seniority level, specific domain) to provide more accurate recommendations. Once skills are recommended, you can select them just like in the Search and Browse sections.
 - **Selected Skills**: View and manage your selected skills
 - **Transform & Export**: Transform skills using Claude and download as JSON
 
@@ -94,10 +95,26 @@ The CLI tool provides the following menu options:
 
 ### Workflow
 
-1. Search or browse for skills you want to transform
+1. Search, browse, or use AI recommendations to find skills you want to transform
+   - **Search**: Enter keywords to search the Lightcast database
+   - **Browse**: Explore skills by type using the interactive tree
+   - **AI Recommendations**: Enter a role title and let AI recommend the top 6 skills. Answer any follow-up questions to refine recommendations.
 2. Select skills from the results (in CLI: enter numbers like `1,3,5` or `all`)
 3. View and manage your selected skills
 4. Transform and export all selected skills to `people_protocol_skills.json`
+
+### AI Recommendations Feature
+
+The AI Recommendations feature uses your local Ollama instance to analyze role titles and recommend the most relevant skills. Here's how it works:
+
+1. **Enter Role Title**: Type the name of the role (e.g., "Data Scientist", "UX Designer", "DevOps Engineer")
+2. **AI Analysis**: The AI analyzes the role and either:
+   - **Asks Follow-up Questions**: If more context would help (e.g., "What industry?", "What seniority level?"), the AI will ask specific questions
+   - **Provides Recommendations**: If enough information is available, the AI immediately searches the Lightcast database and returns the top 6 recommended skills
+3. **Answer Questions**: If asked, provide additional context by answering the AI's questions
+4. **Select Skills**: Once skills are recommended, select the ones you want using checkboxes, then proceed to transform and export
+
+**Note**: The AI recommendations feature requires Ollama to be running and configured (same as the transformation feature).
 
 ## Output Format
 

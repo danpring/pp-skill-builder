@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/components/ui/use-toast"
-import { Search, Download, Loader2, X } from "lucide-react"
+import { Search, Download, Loader2, X, Sparkles, Send } from "lucide-react"
 import { SkillTypeTree } from "@/components/skill-type-tree"
 
 interface Skill {
@@ -53,6 +53,16 @@ export default function Home() {
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isTransforming, setIsTransforming] = useState(false)
   const { toast } = useToast()
+  
+  // AI Recommendations state
+  const [roleTitle, setRoleTitle] = useState("")
+  const [aiConversation, setAiConversation] = useState<Array<{ role: "user" | "assistant"; content: string }>>([])
+  const [aiRecommendedSkills, setAiRecommendedSkills] = useState<Skill[]>([])
+  const [aiReasoning, setAiReasoning] = useState("")
+  const [aiFollowUpQuestion, setAiFollowUpQuestion] = useState("")
+  const [followUpAnswer, setFollowUpAnswer] = useState("")
+  const [isAiLoading, setIsAiLoading] = useState(false)
+  const [hasStartedAiFlow, setHasStartedAiFlow] = useState(false)
 
   useEffect(() => {
     loadSkillTypes()
@@ -251,6 +261,120 @@ export default function Home() {
     }
   }
 
+  const handleAiRecommend = async (initialRole?: string, answer?: string) => {
+    const role = initialRole || roleTitle.trim()
+    if (!role) {
+      toast({
+        title: "Error",
+        description: "Please enter a role title",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsAiLoading(true)
+    setHasStartedAiFlow(true)
+
+    // Build conversation history
+    const conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = [
+      ...aiConversation,
+    ]
+
+    // Add initial role or follow-up answer
+    if (initialRole) {
+      conversationHistory.push({ role: "user", content: `Role: ${role}` })
+    } else if (answer) {
+      conversationHistory.push({ role: "user", content: answer })
+    }
+
+    try {
+      const response = await fetch("/api/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roleTitle: role,
+          conversationHistory,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
+        throw new Error(errorData.error || "Failed to get recommendations")
+      }
+
+      const data = await response.json()
+
+      if (data.type === "follow_up") {
+        // AI needs more context
+        setAiFollowUpQuestion(data.question)
+        setAiReasoning("")
+        setAiRecommendedSkills([])
+        // Update conversation with AI's question
+        const updatedConversation = [
+          ...conversationHistory,
+          { role: "assistant", content: data.question },
+        ]
+        setAiConversation(updatedConversation)
+        toast({
+          title: "AI Question",
+          description: "The AI needs more information to provide better recommendations",
+        })
+      } else if (data.type === "skills") {
+        // AI has recommendations
+        setAiRecommendedSkills(data.skills || [])
+        setAiReasoning(data.reasoning || "")
+        setAiFollowUpQuestion("")
+        setFollowUpAnswer("")
+        setAiConversation([])
+        
+        if (data.skills && data.skills.length > 0) {
+          toast({
+            title: "Success",
+            description: `Found ${data.skills.length} recommended skills`,
+          })
+        } else {
+          toast({
+            title: "Info",
+            description: "Recommendations generated but no matching skills found in Lightcast database",
+          })
+        }
+      }
+    } catch (error) {
+      console.error("AI recommendation error:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to get AI recommendations",
+        variant: "destructive",
+      })
+    } finally {
+      setIsAiLoading(false)
+    }
+  }
+
+  const handleFollowUpAnswer = async () => {
+    if (!followUpAnswer.trim()) {
+      toast({
+        title: "Error",
+        description: "Please provide an answer",
+        variant: "destructive",
+      })
+      return
+    }
+
+    await handleAiRecommend(undefined, followUpAnswer.trim())
+    setFollowUpAnswer("")
+  }
+
+  const resetAiFlow = () => {
+    setRoleTitle("")
+    setAiConversation([])
+    setAiRecommendedSkills([])
+    setAiReasoning("")
+    setAiFollowUpQuestion("")
+    setFollowUpAnswer("")
+    setHasStartedAiFlow(false)
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto py-8 px-4">
@@ -265,6 +389,10 @@ export default function Home() {
           <TabsList>
             <TabsTrigger value="search">Search Skills</TabsTrigger>
             <TabsTrigger value="browse">Browse</TabsTrigger>
+            <TabsTrigger value="ai-recommend">
+              <Sparkles className="mr-2 h-4 w-4" />
+              AI Recommendations
+            </TabsTrigger>
             <TabsTrigger value="selected">
               Selected ({selectedSkills.length})
             </TabsTrigger>
@@ -445,6 +573,196 @@ export default function Home() {
                 </Card>
               )}
             </div>
+          </TabsContent>
+
+          <TabsContent value="ai-recommend" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5" />
+                  AI-Powered Skill Recommendations
+                </CardTitle>
+                <CardDescription>
+                  Enter a role title and let AI recommend the top 6 most important skills for that role
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {!hasStartedAiFlow ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="role-title">Role Title</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="role-title"
+                          placeholder="e.g., Senior Full Stack Developer, Product Manager, Data Analyst..."
+                          value={roleTitle}
+                          onChange={(e) => setRoleTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              handleAiRecommend(roleTitle.trim())
+                            }
+                          }}
+                          aria-label="Role title input"
+                        />
+                        <Button 
+                          onClick={() => handleAiRecommend(roleTitle.trim())} 
+                          disabled={isAiLoading || !roleTitle.trim()}
+                        >
+                          {isAiLoading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Analyzing...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="mr-2 h-4 w-4" />
+                              Get Recommendations
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {aiFollowUpQuestion && (
+                      <Card className="bg-muted/50">
+                        <CardHeader>
+                          <CardTitle className="text-base">AI Follow-up Question</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <p className="text-sm">{aiFollowUpQuestion}</p>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Your answer..."
+                              value={followUpAnswer}
+                              onChange={(e) => setFollowUpAnswer(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  handleFollowUpAnswer()
+                                }
+                              }}
+                              aria-label="Answer to AI question"
+                            />
+                            <Button 
+                              onClick={handleFollowUpAnswer}
+                              disabled={isAiLoading || !followUpAnswer.trim()}
+                            >
+                              {isAiLoading ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Processing...
+                                </>
+                              ) : (
+                                <>
+                                  <Send className="mr-2 h-4 w-4" />
+                                  Submit
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {aiConversation.length > 0 && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-base">Conversation History</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                            {aiConversation.map((msg, idx) => (
+                              <div
+                                key={idx}
+                                className={`p-3 rounded-lg ${
+                                  msg.role === "user"
+                                    ? "bg-primary/10 ml-4"
+                                    : "bg-muted mr-4"
+                                }`}
+                              >
+                                <p className="text-sm font-semibold mb-1">
+                                  {msg.role === "user" ? "You" : "AI"}
+                                </p>
+                                <p className="text-sm">{msg.content}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {aiRecommendedSkills.length > 0 && (
+                      <div className="space-y-2">
+                        {aiReasoning && (
+                          <Card className="bg-muted/50">
+                            <CardContent className="pt-6">
+                              <p className="text-sm">
+                                <strong>AI Reasoning:</strong> {aiReasoning}
+                              </p>
+                            </CardContent>
+                          </Card>
+                        )}
+                        <div className="flex justify-between items-center">
+                          <p className="text-sm text-muted-foreground">
+                            {aiRecommendedSkills.length} recommended skill(s) found
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => selectAll(aiRecommendedSkills)}
+                            >
+                              Select All
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={resetAiFlow}
+                            >
+                              Start New Search
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                          {aiRecommendedSkills.map((skill) => (
+                            <Card key={skill.id} className="p-4">
+                              <div className="flex items-start gap-3">
+                                <Checkbox
+                                  checked={selectedSkills.some((s) => s.id === skill.id)}
+                                  onCheckedChange={() => toggleSkillSelection(skill)}
+                                  aria-label={`Select ${skill.name}`}
+                                />
+                                <div className="flex-1">
+                                  <h3 className="font-semibold">{skill.name}</h3>
+                                  {skill.type && (
+                                    <p className="text-sm text-muted-foreground">
+                                      Type: {skill.type.name}
+                                    </p>
+                                  )}
+                                  {skill.description && (
+                                    <p className="text-sm mt-1">{skill.description}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {isAiLoading && (
+                      <Card>
+                        <CardContent className="flex items-center justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                          <span>AI is analyzing the role and finding relevant skills...</span>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="selected" className="space-y-4">
