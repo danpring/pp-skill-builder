@@ -34,7 +34,86 @@ async function getToken(): Promise<string> {
   return data.access_token
 }
 
-const RECOMMENDATION_PROMPT = `You are a skill recommendation assistant. Your job is to help identify the top 6 most important skills for a given role.
+// Function to check if two skill names are too similar (duplicates or near-duplicates)
+function areSkillsSimilar(skill1: string, skill2: string): boolean {
+  const normalize = (str: string) => str.toLowerCase().trim().replace(/[^\w\s]/g, '')
+  const s1 = normalize(skill1)
+  const s2 = normalize(skill2)
+  
+  // Exact match (after normalization)
+  if (s1 === s2) return true
+  
+  // Check if one contains the other (e.g., "Python" and "Python Programming")
+  if (s1.includes(s2) || s2.includes(s1)) {
+    // But allow if the difference is substantial (more than just a few words)
+    const words1 = s1.split(/\s+/)
+    const words2 = s2.split(/\s+/)
+    const diff = Math.abs(words1.length - words2.length)
+    // If one is significantly longer, they might be different (e.g., "Python" vs "Python Web Development")
+    if (diff <= 2 && (words1.length <= 3 || words2.length <= 3)) {
+      return true
+    }
+  }
+  
+  // Check for very similar names (e.g., "Data Analysis" vs "Data Analytics")
+  const words1 = s1.split(/\s+/)
+  const words2 = s2.split(/\s+/)
+  
+  // If they share most words and have similar length
+  if (words1.length === words2.length && words1.length <= 3) {
+    const commonWords = words1.filter(w => words2.includes(w))
+    if (commonWords.length >= words1.length - 1) {
+      // Check if the difference is just a suffix variation (e.g., "analysis" vs "analytics")
+      const differentWords1 = words1.filter(w => !words2.includes(w))
+      const differentWords2 = words2.filter(w => !words1.includes(w))
+      if (differentWords1.length === 1 && differentWords2.length === 1) {
+        const diff1 = differentWords1[0]
+        const diff2 = differentWords2[0]
+        // Check if they're just variations (e.g., "analysis" vs "analytics", "management" vs "managing")
+        if (diff1.startsWith(diff2.substring(0, 5)) || diff2.startsWith(diff1.substring(0, 5))) {
+          return true
+        }
+      }
+    }
+  }
+  
+  return false
+}
+
+// Function to filter out duplicate and similar skills
+function filterSimilarSkills(skills: any[]): any[] {
+  const filtered: any[] = []
+  const seenNames = new Set<string>()
+  
+  for (const skill of skills) {
+    const skillName = skill.name || ''
+    const normalizedName = skillName.toLowerCase().trim()
+    
+    // Check if we've already seen this exact name
+    if (seenNames.has(normalizedName)) {
+      continue
+    }
+    
+    // Check if this skill is similar to any already included skill
+    let isSimilar = false
+    for (const existingSkill of filtered) {
+      const existingName = existingSkill.name || ''
+      if (areSkillsSimilar(skillName, existingName)) {
+        isSimilar = true
+        break
+      }
+    }
+    
+    if (!isSimilar) {
+      filtered.push(skill)
+      seenNames.add(normalizedName)
+    }
+  }
+  
+  return filtered
+}
+
+const RECOMMENDATION_PROMPT = `You are a skill recommendation assistant. Your job is to help identify the top 6 most important and diverse skills for a given role.
 
 ## Your Task
 
@@ -56,6 +135,37 @@ Once you have enough context, provide exactly 6 skill keywords/phrases that are 
 - Specific and actionable skill names
 - Relevant to the role and context provided
 - Covering a good mix: technical skills, soft skills, domain expertise
+- **CRITICALLY IMPORTANT**: Each skill must be DISTINCT and NON-DUPLICATIVE
+  - Do NOT recommend skills that are slight variations of the same thing (e.g., "Python" and "Python Programming" are duplicates)
+  - Do NOT recommend skills with very similar titles or types (e.g., "Data Analysis" and "Data Analytics" are too similar)
+  - Ensure each skill represents a UNIQUE and DIFFERENT competency area
+  - Aim for a BROAD, COMPREHENSIVE cross-section that covers all core elements of the role
+  - Think of skills as representing different dimensions of the role (e.g., technical, communication, domain knowledge, tools, methodologies, leadership)
+
+## Examples of Good Skill Selection (Diverse and Non-Duplicative)
+
+For a "Senior Full Stack Developer" role:
+- ✅ "JavaScript Programming" (technical core)
+- ✅ "System Architecture" (design/architecture)
+- ✅ "Agile Methodologies" (process/methodology)
+- ✅ "Code Review" (quality assurance)
+- ✅ "API Design" (integration/interface)
+- ✅ "Technical Leadership" (leadership/mentoring)
+
+For a "Product Manager" role:
+- ✅ "Product Strategy" (strategic planning)
+- ✅ "User Research" (user understanding)
+- ✅ "Stakeholder Management" (communication/coordination)
+- ✅ "Data Analysis" (analytics/decision-making)
+- ✅ "Agile Product Development" (process/methodology)
+- ✅ "Roadmap Planning" (planning/execution)
+
+## Examples of Bad Skill Selection (Duplicative or Too Similar)
+
+❌ "Python", "Python Programming", "Python Development" (all the same skill)
+❌ "Data Analysis", "Data Analytics", "Analytical Skills" (too similar)
+❌ "Project Management", "Project Planning", "Managing Projects" (duplicates)
+❌ "Communication", "Verbal Communication", "Written Communication" (too granular/variations)
 
 ## Response Format
 
@@ -71,7 +181,7 @@ Return ONLY valid JSON in one of these two formats:
 {
   "type": "skills",
   "skills": ["Skill keyword 1", "Skill keyword 2", "Skill keyword 3", "Skill keyword 4", "Skill keyword 5", "Skill keyword 6"],
-  "reasoning": "Brief explanation of why these skills are important for this role"
+  "reasoning": "Brief explanation of why these skills are important for this role and how they represent diverse competency areas"
 }
 
 ## Important Rules
@@ -80,6 +190,8 @@ Return ONLY valid JSON in one of these two formats:
 - Make questions specific and actionable
 - When recommending skills, always provide exactly 6 skill keywords
 - Use clear, searchable skill names (e.g., "Python Programming", "Project Management", "Data Analysis")
+- **MANDATORY**: Ensure all 6 skills are DISTINCT and represent DIFFERENT competency areas - no duplicates or near-duplicates
+- **MANDATORY**: Provide a BROAD cross-section that demonstrates all core elements of the role
 - Return ONLY the JSON object, no markdown, no explanation outside the JSON`
 
 export async function POST(request: NextRequest) {
@@ -231,9 +343,12 @@ export async function POST(request: NextRequest) {
           }
         })
 
+        // Filter out similar/duplicate skills by name
+        const uniqueSkills = filterSimilarSkills(allSkills)
+
         // Sort by relevance (prioritize skills that match keywords exactly or closely)
-        // For simplicity, we'll take the first 6 unique skills found
-        const recommendedSkills = allSkills.slice(0, 6)
+        // Take the first 6 unique and diverse skills
+        const recommendedSkills = uniqueSkills.slice(0, 6)
 
         // If we don't have 6 skills yet, try broader searches
         if (recommendedSkills.length < 6) {
@@ -258,8 +373,17 @@ export async function POST(request: NextRequest) {
               if (searchResponse.ok) {
                 const searchData = await searchResponse.json()
                 const skills = searchData.data || []
-                skills.forEach((skill: any) => {
-                  if (skill.id && !seenIds.has(skill.id) && recommendedSkills.length < 6) {
+                // Filter out skills that are similar to already selected ones
+                const newSkills = skills.filter((skill: any) => {
+                  if (!skill.id || seenIds.has(skill.id)) return false
+                  // Check if similar to any already selected skill
+                  return !recommendedSkills.some((existing: any) => 
+                    areSkillsSimilar(skill.name || '', existing.name || '')
+                  )
+                })
+                
+                newSkills.forEach((skill: any) => {
+                  if (recommendedSkills.length < 6) {
                     seenIds.add(skill.id)
                     recommendedSkills.push(skill)
                   }

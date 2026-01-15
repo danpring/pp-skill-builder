@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { useToast } from "@/components/ui/use-toast"
 import { Search, Download, Loader2, X, Sparkles, Send } from "lucide-react"
 import { SkillTypeTree } from "@/components/skill-type-tree"
@@ -63,6 +64,32 @@ export default function Home() {
   const [followUpAnswer, setFollowUpAnswer] = useState("")
   const [isAiLoading, setIsAiLoading] = useState(false)
   const [hasStartedAiFlow, setHasStartedAiFlow] = useState(false)
+  
+  // Multiple role searches state - track all role searches and their results
+  interface RoleSearchResult {
+    roleTitle: string
+    skills: Skill[]
+    reasoning: string
+    timestamp: number
+  }
+  const [roleSearchHistory, setRoleSearchHistory] = useState<RoleSearchResult[]>([])
+  const [currentRoleSearch, setCurrentRoleSearch] = useState<string>("")
+  
+  // Company size generation state
+  interface GeneratedRole {
+    title: string
+    count: number
+    description?: string
+  }
+  const [companySize, setCompanySize] = useState<string>("")
+  const [generatedRoles, setGeneratedRoles] = useState<GeneratedRole[]>([])
+  const [isGeneratingRoles, setIsGeneratingRoles] = useState(false)
+  const [isGeneratingSkills, setIsGeneratingSkills] = useState(false)
+  const [skillGenerationProgress, setSkillGenerationProgress] = useState<{
+    current: number
+    total: number
+    currentRole: string
+  } | null>(null)
 
   useEffect(() => {
     loadSkillTypes()
@@ -274,6 +301,11 @@ export default function Home() {
 
     setIsAiLoading(true)
     setHasStartedAiFlow(true)
+    
+    // Store current role search
+    if (initialRole) {
+      setCurrentRoleSearch(role)
+    }
 
     // Build conversation history
     const conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = [
@@ -310,9 +342,9 @@ export default function Home() {
         setAiReasoning("")
         setAiRecommendedSkills([])
         // Update conversation with AI's question
-        const updatedConversation = [
+        const updatedConversation: Array<{ role: "user" | "assistant"; content: string }> = [
           ...conversationHistory,
-          { role: "assistant", content: data.question },
+          { role: "assistant" as const, content: data.question },
         ]
         setAiConversation(updatedConversation)
         toast({
@@ -321,16 +353,30 @@ export default function Home() {
         })
       } else if (data.type === "skills") {
         // AI has recommendations
-        setAiRecommendedSkills(data.skills || [])
+        const recommendedSkills = data.skills || []
+        setAiRecommendedSkills(recommendedSkills)
         setAiReasoning(data.reasoning || "")
         setAiFollowUpQuestion("")
         setFollowUpAnswer("")
         setAiConversation([])
         
-        if (data.skills && data.skills.length > 0) {
+        // Add this role search to history
+        if (recommendedSkills.length > 0) {
+          const roleSearchResult: RoleSearchResult = {
+            roleTitle: currentRoleSearch || role,
+            skills: recommendedSkills,
+            reasoning: data.reasoning || "",
+            timestamp: Date.now(),
+          }
+          setRoleSearchHistory((prev) => [...prev, roleSearchResult])
+          setCurrentRoleSearch("")
+          
+          // Clear the role title input so user can search another role, but keep recommendations visible
+          setRoleTitle("")
+          
           toast({
             title: "Success",
-            description: `Found ${data.skills.length} recommended skills`,
+            description: `Found ${recommendedSkills.length} recommended skills for "${role}". Added to history. Search another role to add more skills!`,
           })
         } else {
           toast({
@@ -373,6 +419,235 @@ export default function Home() {
     setAiFollowUpQuestion("")
     setFollowUpAnswer("")
     setHasStartedAiFlow(false)
+    setCurrentRoleSearch("")
+  }
+  
+  const addAllSkillsFromRole = (roleSearch: RoleSearchResult) => {
+    const newSkills = roleSearch.skills.filter(
+      (skill) => !selectedSkills.some((s) => s.id === skill.id)
+    )
+    if (newSkills.length > 0) {
+      setSelectedSkills((prev) => [...prev, ...newSkills])
+      toast({
+        title: "Success",
+        description: `Added ${newSkills.length} skill(s) from "${roleSearch.roleTitle}"`,
+      })
+    } else {
+      toast({
+        title: "Info",
+        description: `All skills from "${roleSearch.roleTitle}" are already selected`,
+      })
+    }
+  }
+  
+  const removeRoleSearch = (timestamp: number) => {
+    setRoleSearchHistory((prev) => prev.filter((r) => r.timestamp !== timestamp))
+    toast({
+      title: "Removed",
+      description: "Role search removed from history",
+    })
+  }
+  
+  const clearRoleSearchHistory = () => {
+    setRoleSearchHistory([])
+    toast({
+      title: "Cleared",
+      description: "All role search history cleared",
+    })
+  }
+  
+  const handleGenerateRoles = async () => {
+    const size = parseInt(companySize, 10)
+    if (!companySize.trim() || isNaN(size) || size < 1) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid company size (number of employees)",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsGeneratingRoles(true)
+    try {
+      const response = await fetch("/api/generate-roles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companySize: size }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
+        throw new Error(errorData.error || "Failed to generate roles")
+      }
+
+      const data = await response.json()
+      if (data.roles && Array.isArray(data.roles)) {
+        setGeneratedRoles(data.roles)
+        toast({
+          title: "Success",
+          description: `Generated ${data.roles.length} role(s) for a company of ${size} employees`,
+        })
+      } else {
+        throw new Error("Invalid response format")
+      }
+    } catch (error) {
+      console.error("Error generating roles:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to generate roles",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingRoles(false)
+    }
+  }
+  
+  const handleGetSkillsForRoles = async () => {
+    if (generatedRoles.length === 0) {
+      toast({
+        title: "Error",
+        description: "No roles generated. Please generate roles first.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsGeneratingSkills(true)
+    setSkillGenerationProgress({ current: 0, total: generatedRoles.length, currentRole: "" })
+    
+    const allSkills: Skill[] = []
+    const seenSkillIds = new Set<string>()
+    const roleSkillCounts: Record<string, number> = {}
+
+    try {
+      // Process each role sequentially
+      for (let i = 0; i < generatedRoles.length; i++) {
+        const role = generatedRoles[i]
+        setSkillGenerationProgress({
+          current: i + 1,
+          total: generatedRoles.length,
+          currentRole: role.title,
+        })
+
+        // Track unique skills added for this role
+        let uniqueSkillsForRole = 0
+        const roleSkills: Skill[] = []
+
+        // For each role, we might have multiple instances (count > 1)
+        // But we'll generate skills once per role type, not per instance
+        try {
+          const response = await fetch("/api/recommend", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              roleTitle: role.title,
+              conversationHistory: [],
+            }),
+          })
+
+          if (!response.ok) {
+            console.error(`Failed to get skills for ${role.title}`)
+            continue
+          }
+
+          const data = await response.json()
+          if (data.type === "skills" && data.skills && Array.isArray(data.skills)) {
+            // First, collect all 6 skills for this role
+            data.skills.forEach((skill: Skill) => {
+              if (skill.id) {
+                roleSkills.push(skill)
+              }
+            })
+
+            // Ensure we have 6 skills per role (the API should return 6, but verify)
+            if (roleSkills.length < 6) {
+              console.warn(`Role ${role.title} only has ${roleSkills.length} skills, expected 6`)
+            }
+
+            // Add skills ensuring at least 5 unique skills per role
+            // Process all 6 skills, prioritizing unique ones
+            // We need at least 5 unique skills from each role
+            const uniqueRoleSkills: Skill[] = []
+            const duplicateRoleSkills: Skill[] = []
+
+            // Separate unique and duplicate skills for this role
+            for (const skill of roleSkills) {
+              if (!seenSkillIds.has(skill.id)) {
+                uniqueRoleSkills.push(skill)
+              } else {
+                duplicateRoleSkills.push(skill)
+              }
+            }
+
+            // Add unique skills first (we need at least 5)
+            for (const skill of uniqueRoleSkills) {
+              seenSkillIds.add(skill.id)
+              allSkills.push(skill)
+              uniqueSkillsForRole++
+            }
+
+            // If we have fewer than 5 unique skills, log a warning
+            // (This shouldn't happen if API returns 6 diverse skills, but handle it)
+            if (uniqueSkillsForRole < 5) {
+              console.warn(
+                `Role ${role.title} only contributed ${uniqueSkillsForRole} unique skills (need at least 5). ` +
+                `Total skills from API: ${roleSkills.length}, Duplicates with other roles: ${duplicateRoleSkills.length}`
+              )
+              // Note: We can't get more skills from the API since it already returned 6
+              // This is a limitation if roles have significant skill overlap
+            }
+
+            roleSkillCounts[role.title] = uniqueSkillsForRole
+          }
+        } catch (error) {
+          console.error(`Error getting skills for ${role.title}:`, error)
+          // Continue with next role even if one fails
+        }
+      }
+
+      // Add all collected skills to selected skills
+      if (allSkills.length > 0) {
+        setSelectedSkills((prev) => {
+          const newSkills = allSkills.filter(
+            (skill) => !prev.some((s) => s.id === skill.id)
+          )
+          return [...prev, ...newSkills]
+        })
+        
+        // Calculate summary
+        const totalUniqueSkills = allSkills.length
+        const rolesWithSkills = Object.keys(roleSkillCounts).length
+        const avgSkillsPerRole = rolesWithSkills > 0 
+          ? (Object.values(roleSkillCounts).reduce((a, b) => a + b, 0) / rolesWithSkills).toFixed(1)
+          : "0"
+        
+        toast({
+          title: "Success",
+          description: `Added ${totalUniqueSkills} skill(s) from ${rolesWithSkills} role(s) (avg ${avgSkillsPerRole} per role)`,
+        })
+      } else {
+        toast({
+          title: "Warning",
+          description: "No skills were found for the generated roles",
+        })
+      }
+    } catch (error) {
+      console.error("Error generating skills:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to generate skills",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingSkills(false)
+      setSkillGenerationProgress(null)
+    }
+  }
+  
+  const resetCompanySizeFlow = () => {
+    setCompanySize("")
+    setGeneratedRoles([])
+    setSkillGenerationProgress(null)
   }
 
   return (
@@ -391,7 +666,11 @@ export default function Home() {
             <TabsTrigger value="browse">Browse</TabsTrigger>
             <TabsTrigger value="ai-recommend">
               <Sparkles className="mr-2 h-4 w-4" />
-              AI Recommendations
+              Browse by Role
+            </TabsTrigger>
+            <TabsTrigger value="company-size">
+              <Sparkles className="mr-2 h-4 w-4" />
+              Generate by Company Size
             </TabsTrigger>
             <TabsTrigger value="selected">
               Selected ({selectedSkills.length})
@@ -580,50 +859,54 @@ export default function Home() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5" />
-                  AI-Powered Skill Recommendations
+                  Browse Skills by Role
                 </CardTitle>
                 <CardDescription>
-                  Enter a role title and let AI recommend the top 6 most important skills for that role
+                  Enter role titles to discover skills for each role. You can search multiple roles and accumulate skills to build a large list (100s of skills).
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {!hasStartedAiFlow ? (
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="role-title">Role Title</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="role-title"
-                          placeholder="e.g., Senior Full Stack Developer, Product Manager, Data Analyst..."
-                          value={roleTitle}
-                          onChange={(e) => setRoleTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              handleAiRecommend(roleTitle.trim())
-                            }
-                          }}
-                          aria-label="Role title input"
-                        />
-                        <Button 
-                          onClick={() => handleAiRecommend(roleTitle.trim())} 
-                          disabled={isAiLoading || !roleTitle.trim()}
-                        >
-                          {isAiLoading ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Analyzing...
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="mr-2 h-4 w-4" />
-                              Get Recommendations
-                            </>
-                          )}
-                        </Button>
-                      </div>
+                {/* Always show the search input, even when in flow */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="role-title">Role Title</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="role-title"
+                        placeholder="e.g., Senior Full Stack Developer, Product Manager, Data Analyst..."
+                        value={roleTitle}
+                        onChange={(e) => setRoleTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !isAiLoading) {
+                            handleAiRecommend(roleTitle.trim())
+                          }
+                        }}
+                        aria-label="Role title input"
+                      />
+                      <Button 
+                        onClick={() => handleAiRecommend(roleTitle.trim())} 
+                        disabled={isAiLoading || !roleTitle.trim()}
+                      >
+                        {isAiLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Analyzing...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Get Recommendations
+                          </>
+                        )}
+                      </Button>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      Search multiple roles to build a large skill list. Each search adds skills to your history.
+                    </p>
                   </div>
-                ) : (
+                </div>
+                
+                {hasStartedAiFlow && (
                   <div className="space-y-4">
                     {aiFollowUpQuestion && (
                       <Card className="bg-muted/50">
@@ -720,11 +1003,11 @@ export default function Home() {
                               size="sm"
                               onClick={resetAiFlow}
                             >
-                              Start New Search
+                              Search Another Role
                             </Button>
                           </div>
                         </div>
-                        <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                        <div className="space-y-2 max-h-[400px] overflow-y-auto">
                           {aiRecommendedSkills.map((skill) => (
                             <Card key={skill.id} className="p-4">
                               <div className="flex items-start gap-3">
@@ -750,6 +1033,106 @@ export default function Home() {
                         </div>
                       </div>
                     )}
+                    
+                    {/* Role Search History */}
+                    {roleSearchHistory.length > 0 && (
+                      <div className="space-y-4 mt-6 pt-6 border-t">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <h3 className="text-lg font-semibold">Role Search History</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {roleSearchHistory.length} role(s) searched • {roleSearchHistory.reduce((sum, r) => sum + r.skills.length, 0)} total skills found
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={clearRoleSearchHistory}
+                          >
+                            Clear History
+                          </Button>
+                        </div>
+                        <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                          {roleSearchHistory.map((roleSearch) => {
+                            const alreadySelectedCount = roleSearch.skills.filter((s) =>
+                              selectedSkills.some((selected) => selected.id === s.id)
+                            ).length
+                            const canAddCount = roleSearch.skills.length - alreadySelectedCount
+                            
+                            return (
+                              <Card key={roleSearch.timestamp} className="p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <h4 className="font-semibold">{roleSearch.roleTitle}</h4>
+                                      <span className="text-xs text-muted-foreground">
+                                        ({roleSearch.skills.length} skills)
+                                      </span>
+                                    </div>
+                                    {roleSearch.reasoning && (
+                                      <p className="text-sm text-muted-foreground mb-3">
+                                        {roleSearch.reasoning}
+                                      </p>
+                                    )}
+                                    <div className="flex gap-2 flex-wrap">
+                                      <Button
+                                        variant="default"
+                                        size="sm"
+                                        onClick={() => addAllSkillsFromRole(roleSearch)}
+                                        disabled={canAddCount === 0}
+                                      >
+                                        Add All {canAddCount > 0 && `(${canAddCount} new)`}
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => selectAll(roleSearch.skills)}
+                                      >
+                                        Select All
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => removeRoleSearch(roleSearch.timestamp)}
+                                        aria-label={`Remove ${roleSearch.roleTitle}`}
+                                      >
+                                        <X className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                    {alreadySelectedCount > 0 && (
+                                      <p className="text-xs text-muted-foreground mt-2">
+                                        {alreadySelectedCount} of {roleSearch.skills.length} skills already in your list
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="mt-3 space-y-2 max-h-[200px] overflow-y-auto">
+                                  {roleSearch.skills.map((skill) => (
+                                    <Card key={skill.id} className="p-2 bg-muted/30">
+                                      <div className="flex items-start gap-2">
+                                        <Checkbox
+                                          checked={selectedSkills.some((s) => s.id === skill.id)}
+                                          onCheckedChange={() => toggleSkillSelection(skill)}
+                                          aria-label={`Select ${skill.name}`}
+                                        />
+                                        <div className="flex-1">
+                                          <h5 className="text-sm font-medium">{skill.name}</h5>
+                                          {skill.type && (
+                                            <p className="text-xs text-muted-foreground">
+                                              {skill.type.name}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </Card>
+                                  ))}
+                                </div>
+                              </Card>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {isAiLoading && (
                       <Card>
@@ -761,6 +1144,160 @@ export default function Home() {
                     )}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="company-size" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5" />
+                  Generate Skills by Company Size
+                </CardTitle>
+                <CardDescription>
+                  Enter a company size to generate realistic role breakdowns. Review the roles, then generate skills for all roles at once.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="company-size">Company Size (Number of Employees)</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="company-size"
+                        type="number"
+                        placeholder="e.g., 25, 50, 100..."
+                        value={companySize}
+                        onChange={(e) => setCompanySize(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !isGeneratingRoles) {
+                            handleGenerateRoles()
+                          }
+                        }}
+                        aria-label="Company size input"
+                        min="1"
+                      />
+                      <Button
+                        onClick={handleGenerateRoles}
+                        disabled={isGeneratingRoles || !companySize.trim()}
+                      >
+                        {isGeneratingRoles ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Generate Roles
+                          </>
+                        )}
+                      </Button>
+                      {generatedRoles.length > 0 && (
+                        <Button
+                          variant="outline"
+                          onClick={resetCompanySizeFlow}
+                          aria-label="Reset company size flow"
+                        >
+                          <X className="mr-2 h-4 w-4" />
+                          Reset
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Enter the number of employees in the company. The system will generate realistic role types and counts.
+                    </p>
+                  </div>
+
+                  {generatedRoles.length > 0 && (
+                    <div className="space-y-4 mt-6 pt-6 border-t">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h3 className="text-lg font-semibold">Generated Roles</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {generatedRoles.length} role type(s) • {generatedRoles.reduce((sum, r) => sum + r.count, 0)} total positions
+                          </p>
+                        </div>
+                        <Button
+                          onClick={handleGetSkillsForRoles}
+                          disabled={isGeneratingSkills}
+                          size="lg"
+                        >
+                          {isGeneratingSkills ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Generating Skills...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="mr-2 h-4 w-4" />
+                              Get Skills
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {skillGenerationProgress && (
+                        <Card className="bg-muted/50">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-sm">
+                                <span>Processing roles...</span>
+                                <span>
+                                  {skillGenerationProgress.current} / {skillGenerationProgress.total}
+                                </span>
+                              </div>
+                              <div className="w-full bg-secondary rounded-full h-2">
+                                <div
+                                  className="bg-primary h-2 rounded-full transition-all"
+                                  style={{
+                                    width: `${(skillGenerationProgress.current / skillGenerationProgress.total) * 100}%`,
+                                  }}
+                                />
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                Current: {skillGenerationProgress.currentRole}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                        {generatedRoles.map((role, index) => (
+                          <Card key={index} className="p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h4 className="font-semibold">{role.title}</h4>
+                                  <span className="text-sm text-muted-foreground">
+                                    ({role.count} {role.count === 1 ? "position" : "positions"})
+                                  </span>
+                                </div>
+                                {role.description && (
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    {role.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {generatedRoles.length === 0 && !isGeneratingRoles && (
+                    <Card className="bg-muted/50">
+                      <CardContent className="pt-6">
+                        <p className="text-sm text-muted-foreground text-center">
+                          Enter a company size and click "Generate Roles" to create a realistic role breakdown.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -852,28 +1389,83 @@ export default function Home() {
                     <p className="text-sm font-semibold">
                       {transformedSkills.length} skill(s) transformed successfully
                     </p>
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                    <div className="space-y-4 max-h-[600px] overflow-y-auto">
                       {transformedSkills.map((skill, index) => (
                         <Card key={index} className="p-4">
                           <h3 className="font-semibold mb-2">{skill.name}</h3>
-                          <p className="text-sm text-muted-foreground mb-3">{skill.description}</p>
-                          <div className="space-y-2 text-sm">
-                            <div>
-                              <strong>Poor:</strong> {skill.levels.poor.length} statements
-                            </div>
-                            <div>
-                              <strong>Basic:</strong> {skill.levels.basic.length} statements
-                            </div>
-                            <div>
-                              <strong>Intermediate:</strong> {skill.levels.intermediate.length} statements
-                            </div>
-                            <div>
-                              <strong>Advanced:</strong> {skill.levels.advanced.length} statements
-                            </div>
-                            <div>
-                              <strong>Exceptional:</strong> {skill.levels.exceptional.length} statements
-                            </div>
-                          </div>
+                          <p className="text-sm text-muted-foreground mb-4">{skill.description}</p>
+                          <Accordion type="multiple" className="w-full">
+                            <AccordionItem value={`${index}-poor`}>
+                              <AccordionTrigger className="text-sm">
+                                <span>
+                                  <strong>Poor</strong> ({skill.levels.poor.length} statement{skill.levels.poor.length !== 1 ? 's' : ''})
+                                </span>
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground ml-2">
+                                  {skill.levels.poor.map((statement, idx) => (
+                                    <li key={idx}>{statement}</li>
+                                  ))}
+                                </ul>
+                              </AccordionContent>
+                            </AccordionItem>
+                            <AccordionItem value={`${index}-basic`}>
+                              <AccordionTrigger className="text-sm">
+                                <span>
+                                  <strong>Basic</strong> ({skill.levels.basic.length} statement{skill.levels.basic.length !== 1 ? 's' : ''})
+                                </span>
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground ml-2">
+                                  {skill.levels.basic.map((statement, idx) => (
+                                    <li key={idx}>{statement}</li>
+                                  ))}
+                                </ul>
+                              </AccordionContent>
+                            </AccordionItem>
+                            <AccordionItem value={`${index}-intermediate`}>
+                              <AccordionTrigger className="text-sm">
+                                <span>
+                                  <strong>Intermediate</strong> ({skill.levels.intermediate.length} statement{skill.levels.intermediate.length !== 1 ? 's' : ''})
+                                </span>
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground ml-2">
+                                  {skill.levels.intermediate.map((statement, idx) => (
+                                    <li key={idx}>{statement}</li>
+                                  ))}
+                                </ul>
+                              </AccordionContent>
+                            </AccordionItem>
+                            <AccordionItem value={`${index}-advanced`}>
+                              <AccordionTrigger className="text-sm">
+                                <span>
+                                  <strong>Advanced</strong> ({skill.levels.advanced.length} statement{skill.levels.advanced.length !== 1 ? 's' : ''})
+                                </span>
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground ml-2">
+                                  {skill.levels.advanced.map((statement, idx) => (
+                                    <li key={idx}>{statement}</li>
+                                  ))}
+                                </ul>
+                              </AccordionContent>
+                            </AccordionItem>
+                            <AccordionItem value={`${index}-exceptional`}>
+                              <AccordionTrigger className="text-sm">
+                                <span>
+                                  <strong>Exceptional</strong> ({skill.levels.exceptional.length} statement{skill.levels.exceptional.length !== 1 ? 's' : ''})
+                                </span>
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground ml-2">
+                                  {skill.levels.exceptional.map((statement, idx) => (
+                                    <li key={idx}>{statement}</li>
+                                  ))}
+                                </ul>
+                              </AccordionContent>
+                            </AccordionItem>
+                          </Accordion>
                         </Card>
                       ))}
                     </div>

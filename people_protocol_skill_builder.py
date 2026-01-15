@@ -79,13 +79,17 @@ Each statement must be:
 
 ## Statement Quantity Per Level
 
-- **Poor**: 2–5 statements (define clear "red lines")
-- **Basic**: 2–4 statements (core foundational behaviors)
-- **Intermediate**: 2–4 statements (solid independent performance)
-- **Advanced**: 3–5 statements (multiple aspects of mastery)
-- **Exceptional**: 1–3 statements (rare, distinctive achievements)
+**CRITICAL - MANDATORY REQUIREMENT**: Each level MUST have EXACTLY 2 or more statements. There should NEVER be 0 or 1 statement for any level. This is a hard requirement that cannot be violated.
 
-**Total per skill**: 12–20 observable statements.
+- **Poor**: 2–5 statements (define clear "red lines") - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+- **Basic**: 2–4 statements (core foundational behaviors) - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+- **Intermediate**: 2–4 statements (solid independent performance) - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+- **Advanced**: 2–5 statements (multiple aspects of mastery) - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+- **Exceptional**: 2–3 statements (rare, distinctive achievements) - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+
+**Total per skill**: 10–21 observable statements (minimum 10: 2 per level × 5 levels).
+
+**VALIDATION**: Your response will be rejected if ANY level has fewer than 2 statements. Ensure every level has at least 2 statements before returning your response.
 
 ## Statement Writing Patterns by Level
 
@@ -150,7 +154,7 @@ Return ONLY valid JSON in this exact structure (no markdown, no explanation):
     "basic": ["statement 1", "statement 2"],
     "intermediate": ["statement 1", "statement 2"],
     "advanced": ["statement 1", "statement 2", "statement 3"],
-    "exceptional": ["statement 1"]
+    "exceptional": ["statement 1", "statement 2"]
   }}
 }}
 
@@ -236,16 +240,34 @@ def transform_skill(client, skill):
     
     # Parse JSON response
     try:
-        return json.loads(response_text)
+        result = json.loads(response_text)
     except json.JSONDecodeError:
         # Try to extract JSON if wrapped in markdown
         if "```json" in response_text:
             json_str = response_text.split("```json")[1].split("```")[0].strip()
-            return json.loads(json_str)
+            result = json.loads(json_str)
         elif "```" in response_text:
             json_str = response_text.split("```")[1].split("```")[0].strip()
-            return json.loads(json_str)
-        raise
+            result = json.loads(json_str)
+        else:
+            raise
+    
+    # Validate minimum 2 statements per level
+    levels = ["poor", "basic", "intermediate", "advanced", "exceptional"]
+    validation_errors = []
+    
+    for level in levels:
+        statements = result.get("levels", {}).get(level, [])
+        if not isinstance(statements, list) or len(statements) < 2:
+            validation_errors.append(
+                f'Level "{level}" must have at least 2 statements, but found {len(statements) if isinstance(statements, list) else 0}'
+            )
+    
+    if validation_errors:
+        error_msg = f"Invalid skill transformation: {'; '.join(validation_errors)}. Please regenerate with at least 2 statements per level."
+        raise ValueError(error_msg)
+    
+    return result
 
 
 # =============================================================================
