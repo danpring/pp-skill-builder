@@ -310,21 +310,26 @@ export const SkillTypeTree = ({ onTypeSelect, selectedTypeId }: SkillTypeTreePro
               initialExpandedItems={treeElements.map((el) => el.id)}
               indicator
             >
-              {treeElements.map((category) => (
-                <Folder key={category.id} element={category.name} value={category.id}>
-                  {category.children?.map((type) => (
-                    <File
-                      key={type.id}
-                      value={type.id}
-                      isSelect={selectedTypeId === type.id}
-                      handleSelect={() => handleFileSelect(type.id)}
-                      onClick={() => handleFileSelect(type.id)}
-                    >
-                      {type.name} <span className="text-muted-foreground text-xs">({counts[type.id] || 0})</span>
-                    </File>
-                  ))}
-                </Folder>
-              ))}
+              {treeElements.map((category) => {
+                if (!('children' in category) || !category.children || category.children.length === 0) {
+                  return null
+                }
+                return (
+                  <Folder key={category.id} element={category.name} value={category.id}>
+                    {category.children.map((type) => (
+                      <File
+                        key={type.id}
+                        value={type.id}
+                        isSelect={selectedTypeId === type.id}
+                        handleSelect={() => handleFileSelect(type.id)}
+                        onClick={() => handleFileSelect(type.id)}
+                      >
+                        {type.name} <span className="text-muted-foreground text-xs">({counts[type.id] || 0})</span>
+                      </File>
+                    ))}
+                  </Folder>
+                )
+              })}
             </Tree>
           </div>
         ) : (

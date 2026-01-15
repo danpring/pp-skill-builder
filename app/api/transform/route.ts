@@ -38,13 +38,17 @@ Each statement must be:
 
 ## Statement Quantity Per Level
 
-- **Poor**: 2–5 statements (define clear "red lines")
-- **Basic**: 2–4 statements (core foundational behaviors)
-- **Intermediate**: 2–4 statements (solid independent performance)
-- **Advanced**: 3–5 statements (multiple aspects of mastery)
-- **Exceptional**: 1–3 statements (rare, distinctive achievements)
+**CRITICAL - MANDATORY REQUIREMENT**: Each level MUST have EXACTLY 2 or more statements. There should NEVER be 0 or 1 statement for any level. This is a hard requirement that cannot be violated.
 
-**Total per skill**: 12–20 observable statements.
+- **Poor**: 2–5 statements (define clear "red lines") - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+- **Basic**: 2–4 statements (core foundational behaviors) - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+- **Intermediate**: 2–4 statements (solid independent performance) - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+- **Advanced**: 2–5 statements (multiple aspects of mastery) - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+- **Exceptional**: 2–3 statements (rare, distinctive achievements) - **MUST HAVE AT LEAST 2, NEVER 0 OR 1**
+
+**Total per skill**: 10–21 observable statements (minimum 10: 2 per level × 5 levels).
+
+**VALIDATION**: Your response will be rejected if ANY level has fewer than 2 statements. Ensure every level has at least 2 statements before returning your response.
 
 ## Statement Writing Patterns by Level
 
@@ -109,7 +113,7 @@ Return ONLY valid JSON in this exact structure (no markdown, no explanation):
     "basic": ["statement 1", "statement 2"],
     "intermediate": ["statement 1", "statement 2"],
     "advanced": ["statement 1", "statement 2", "statement 3"],
-    "exceptional": ["statement 1"]
+    "exceptional": ["statement 1", "statement 2"]
   }
 }
 
@@ -120,6 +124,131 @@ Description: {skill_description}
 Lightcast ID: {skill_id}
 
 Return ONLY the JSON object, nothing else.`
+
+async function callOllamaWithRetry(
+  ollamaUrl: string,
+  ollamaModel: string,
+  prompt: string,
+  maxRetries: number = 3
+): Promise<any> {
+  let lastError: Error | null = null
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Calling Ollama API (attempt ${attempt}/${maxRetries})...`)
+      
+      const response = await fetch(ollamaUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: ollamaModel,
+          messages: [
+            {
+              role: "user",
+              content: prompt + "\n\nCRITICAL: Every level (poor, basic, intermediate, advanced, exceptional) MUST have at least 2 statements. Return ONLY valid JSON in the exact structure specified, no markdown, no explanation.",
+            },
+          ],
+          stream: false,
+          options: {
+            temperature: 0.7,
+            num_predict: 2000,
+          },
+        }),
+      })
+
+      console.log("Ollama API response status:", response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("Ollama API error:", response.status, errorText)
+        throw new Error(`Ollama API error (${response.status}): ${errorText}`)
+      }
+
+      let data
+      try {
+        data = await response.json()
+        console.log("Ollama API response received")
+      } catch (parseError) {
+        console.error("Failed to parse Ollama API response as JSON:", parseError)
+        throw new Error("Invalid JSON response from Ollama API")
+      }
+
+      // Handle Ollama response structure
+      let responseText: string
+      if (data.message && data.message.content) {
+        responseText = data.message.content.trim()
+      } else if (data.response) {
+        // Fallback for /api/generate format
+        responseText = data.response.trim()
+      } else {
+        console.error("Invalid Ollama response structure:", JSON.stringify(data, null, 2))
+        throw new Error("Invalid response structure from Ollama API")
+      }
+
+      // Parse JSON response
+      let result
+      try {
+        result = JSON.parse(responseText)
+      } catch (parseError) {
+        // Try to extract JSON if wrapped in markdown
+        if (responseText.includes("```json")) {
+          const jsonStr = responseText.split("```json")[1].split("```")[0].trim()
+          result = JSON.parse(jsonStr)
+        } else if (responseText.includes("```")) {
+          const jsonStr = responseText.split("```")[1].split("```")[0].trim()
+          result = JSON.parse(jsonStr)
+        } else {
+          console.error("Failed to parse JSON response. Response text:", responseText.substring(0, 500))
+          throw new Error(`Failed to parse JSON response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`)
+        }
+      }
+
+      // Validate minimum 2 statements per level
+      const levels = ["poor", "basic", "intermediate", "advanced", "exceptional"]
+      const validationErrors: string[] = []
+      
+      for (const level of levels) {
+        const statements = result.levels?.[level]
+        if (!Array.isArray(statements) || statements.length < 2) {
+          validationErrors.push(
+            `Level "${level}" must have at least 2 statements, but found ${statements?.length || 0}`
+          )
+        }
+      }
+
+      if (validationErrors.length > 0) {
+        if (attempt < maxRetries) {
+          console.warn(`Validation failed on attempt ${attempt}:`, validationErrors)
+          console.log("Retrying with more explicit prompt...")
+          lastError = new Error(validationErrors.join("; "))
+          // Add a more explicit reminder to the prompt for retry
+          prompt = prompt + "\n\n⚠️ RETRY ATTEMPT: The previous response was rejected because some levels had fewer than 2 statements. You MUST provide at least 2 statements for EVERY level (poor, basic, intermediate, advanced, exceptional). Do not return 0 or 1 statement for any level."
+          continue // Retry
+        } else {
+          throw new Error(
+            `Invalid skill transformation after ${maxRetries} attempts: ${validationErrors.join("; ")}. ` +
+            `Every level must have at least 2 statements.`
+          )
+        }
+      }
+
+      // Validation passed
+      return result
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      if (attempt < maxRetries) {
+        console.warn(`Attempt ${attempt} failed:`, lastError.message)
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+        continue
+      }
+    }
+  }
+  
+  throw lastError || new Error("Failed to transform skill after all retry attempts")
+}
 
 export async function POST(request: NextRequest) {
   const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || "http://localhost:11434"
@@ -146,76 +275,9 @@ export async function POST(request: NextRequest) {
       .replace("{skill_description}", skill.description || "No description available")
       .replace("{skill_id}", skill.id)
 
-    console.log("Calling Ollama API...")
     const ollamaUrl = `${ollamaBaseUrl}/api/chat`
     
-    const response = await fetch(ollamaUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: ollamaModel,
-        messages: [
-          {
-            role: "user",
-            content: prompt + "\n\nRemember: Return ONLY valid JSON in the exact structure specified, no markdown, no explanation.",
-          },
-        ],
-        stream: false,
-        options: {
-          temperature: 0.7,
-          num_predict: 2000,
-        },
-      }),
-    })
-
-    console.log("Ollama API response status:", response.status)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("Ollama API error:", response.status, errorText)
-      throw new Error(`Ollama API error (${response.status}): ${errorText}`)
-    }
-
-    let data
-    try {
-      data = await response.json()
-      console.log("Ollama API response received")
-    } catch (parseError) {
-      console.error("Failed to parse Ollama API response as JSON:", parseError)
-      throw new Error("Invalid JSON response from Ollama API")
-    }
-
-    // Handle Ollama response structure
-    let responseText: string
-    if (data.message && data.message.content) {
-      responseText = data.message.content.trim()
-    } else if (data.response) {
-      // Fallback for /api/generate format
-      responseText = data.response.trim()
-    } else {
-      console.error("Invalid Ollama response structure:", JSON.stringify(data, null, 2))
-      throw new Error("Invalid response structure from Ollama API")
-    }
-
-    // Parse JSON response
-    let result
-    try {
-      result = JSON.parse(responseText)
-    } catch (parseError) {
-      // Try to extract JSON if wrapped in markdown
-      if (responseText.includes("```json")) {
-        const jsonStr = responseText.split("```json")[1].split("```")[0].trim()
-        result = JSON.parse(jsonStr)
-      } else if (responseText.includes("```")) {
-        const jsonStr = responseText.split("```")[1].split("```")[0].trim()
-        result = JSON.parse(jsonStr)
-      } else {
-        console.error("Failed to parse JSON response. Response text:", responseText.substring(0, 500))
-        throw new Error(`Failed to parse JSON response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`)
-      }
-    }
+    const result = await callOllamaWithRetry(ollamaUrl, ollamaModel, prompt, 3)
 
     return NextResponse.json({ transformed: result })
   } catch (error) {

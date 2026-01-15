@@ -77,7 +77,14 @@ This tool helps you:
 The web interface provides a modern, user-friendly experience with:
 - **Search Skills**: Search for skills by keyword
 - **Browse**: Explore skills using an interactive tree view of skill types with counts. Filter types by name and click on any type to view its skills. Types are automatically categorized (Common Skills, Specialized Skills, Software & Tools, etc.) for easy navigation.
-- **AI Recommendations**: Get AI-powered skill recommendations based on role titles. Simply enter a role title (e.g., "Senior Full Stack Developer", "Product Manager"), and the AI will analyze the role and recommend the top 6 most relevant skills from the Lightcast database. The AI may ask follow-up questions for additional context (industry, seniority level, specific domain) to provide more accurate recommendations. Once skills are recommended, you can select them just like in the Search and Browse sections.
+- **AI Recommendations (Browse by Role)**: Get AI-powered skill recommendations based on role titles. Enter multiple role titles (e.g., "Senior Full Stack Developer", "Product Manager", "Data Scientist") to discover skills for each role. The AI will analyze each role and recommend the top 6 most relevant skills from the Lightcast database. You can:
+  - Search multiple roles in sequence to build up a large list of skills (100s of skills)
+  - View all your role searches in a history panel
+  - Add all skills from a role search to your selected list with one click
+  - See which skills from each role are already in your list
+  - The AI may ask follow-up questions for additional context (industry, seniority level, specific domain) to provide more accurate recommendations
+  - Once skills are recommended, you can select individual skills or add all skills from a role search at once
+- **Generate by Company Size**: Generate realistic role breakdowns for companies based on their size. Enter the number of employees, review the generated roles, then generate skills for all roles at once. Perfect for creating large skill datasets for MVP testing. See the "Company Size Generation Feature" section below for details.
 - **Selected Skills**: View and manage your selected skills
 - **Transform & Export**: Transform skills using Claude and download as JSON
 
@@ -103,18 +110,76 @@ The CLI tool provides the following menu options:
 3. View and manage your selected skills
 4. Transform and export all selected skills to `people_protocol_skills.json`
 
-### AI Recommendations Feature
+### AI Recommendations Feature (Browse by Role)
 
-The AI Recommendations feature uses your local Ollama instance to analyze role titles and recommend the most relevant skills. Here's how it works:
+The AI Recommendations feature uses your local Ollama instance to analyze role titles and recommend the most relevant skills. This feature is designed to help you build large skill lists (100s of skills) by searching multiple roles.
 
-1. **Enter Role Title**: Type the name of the role (e.g., "Data Scientist", "UX Designer", "DevOps Engineer")
+**How it works:**
+
+1. **Enter Role Title**: Type the name of a role (e.g., "Data Scientist", "UX Designer", "DevOps Engineer", "Product Manager")
 2. **AI Analysis**: The AI analyzes the role and either:
    - **Asks Follow-up Questions**: If more context would help (e.g., "What industry?", "What seniority level?"), the AI will ask specific questions
    - **Provides Recommendations**: If enough information is available, the AI immediately searches the Lightcast database and returns the top 6 recommended skills
 3. **Answer Questions**: If asked, provide additional context by answering the AI's questions
-4. **Select Skills**: Once skills are recommended, select the ones you want using checkboxes, then proceed to transform and export
+4. **Build Your List**: 
+   - **Add Individual Skills**: Select individual skills using checkboxes
+   - **Add All Skills from a Role**: Click "Add All" to add all recommended skills from a role search to your selected list at once
+   - **Search More Roles**: After getting recommendations, click "Search Another Role" to search for additional roles and accumulate more skills
+5. **Role Search History**: All your role searches are saved in a history panel where you can:
+   - See all roles you've searched and their recommended skills
+   - Add all skills from any previous role search
+   - Remove role searches you no longer need
+   - See how many skills from each role are already in your selected list
+
+**Building Large Skill Lists (100s of skills):**
+
+To create a comprehensive skill list with 100s of skills:
+1. Search for multiple related roles (e.g., "Senior Developer", "Junior Developer", "Tech Lead", "Architect")
+2. For each role, add all recommended skills using the "Add All" button
+3. Continue searching and adding skills from different roles
+4. The system automatically prevents duplicate skills from being added
+5. View your accumulated skills in the "Selected" tab
+6. Transform and export when ready
 
 **Note**: The AI recommendations feature requires Ollama to be running and configured (same as the transformation feature).
+
+### Company Size Generation Feature
+
+The Company Size Generation feature helps you quickly create large skill datasets for MVP testing by generating realistic role breakdowns based on company size.
+
+**How it works:**
+
+1. **Enter Company Size**: Type the number of employees in the company (e.g., 25, 50, 100, 200)
+2. **Generate Roles**: Click "Generate Roles" to get a realistic breakdown of roles for that company size
+   - The AI analyzes typical organizational structures for companies of that size
+   - Generates role titles, counts, and descriptions
+   - Considers industry-standard role distributions
+3. **Review Roles**: Review the generated roles and their counts
+   - See how many positions of each role type
+   - Read descriptions for each role
+   - Total positions should approximately match the company size
+4. **Get Skills**: Click "Get Skills" to generate skills for all roles
+   - The system processes each role sequentially
+   - For each role, it generates the top 6 most relevant skills
+   - All unique skills are automatically added to your selected skills list
+   - Progress indicator shows which role is being processed
+5. **Export**: Once skills are generated, go to "Transform & Export" to transform and download
+
+**Example Workflow for MVP Testing:**
+
+1. Enter company size: 25
+2. Generate roles → Get roles like: CEO (1), CTO (1), Senior Engineers (3), Engineers (5), Product Manager (1), Designer (2), etc.
+3. Review the 10-15 roles generated
+4. Click "Get Skills" → System processes each role and adds ~60-90 unique skills to your list
+5. Transform and export the complete skill set
+
+**Use Cases:**
+- Creating comprehensive skill datasets for testing
+- Generating realistic skill profiles for different company sizes
+- Building large skill libraries quickly
+- MVP testing with diverse skill sets
+
+**Note**: This feature requires Ollama to be running and configured. The role generation and skill generation both use your local Ollama instance.
 
 ## Output Format
 
